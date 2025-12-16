@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        .services {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            margin-top: 30px;
+        }
+        .service-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .service {
+            background: rgba(255,255,255,0.2);
+            padding: 15px;
+            border-radius: 10px;
+            transition: transform 0.3s, background 0.3s;
+        }
+        .service:hover {
+            transform: translateY(-5px);
+            background: rgba(255,255,255,0.3);
+        }
+        .emoji {
+            font-size: 2rem;
+            margin-bottom: 5px;
+        }
+        a {
+            color: #fff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏠 Welcome to Your Home Server</h1>
+        <p>Your personal cloud with 100+ services at your fingertips</p>
+        
+        <div class="services">
+            <h2>Quick Access</h2>
+            <div class="service-grid">
+                <div class="service">
+                    <div class="emoji">🎬</div>
+                    <a href="/jellyfin">Jellyfin</a>
+                </div>
+                <div class="service">
+                    <div class="emoji">📁</div>
+                    <a href="/nextcloud">Nextcloud</a>
+                </div>
+                <div class="service">
+                    <div class="emoji">🔒</div>
+                    <a href="/vault">Passwords</a>
+                </div>
+                <div class="service">
+                    <div class="emoji">📊</div>
+                    <a href="/grafana">Monitoring</a>
+                </div>
+                <div class="service">
+                    <div class="emoji">🛡️</div>
+                    <a href="/pihole">Pi-hole</a>
+                </div>
+                <div class="service">
+                    <div class="emoji">💻</div>
+                    <a href="/code">VS Code</a>
+                </div>
+            </div>
+        </div>
+        
+        <p style="margin-top: 30px; font-size: 0.9rem; opacity: 0.7;">
+            Made by Ritesh Rana | Powered by Docker
+        </p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,76 @@
+version: '3.8'
+
+# Home Automation Stack
+# Home Assistant: Central automation hub
+# Node-RED: Visual automation programming
+# Mosquitto: MQTT message broker for IoT devices
+
+services:
+  # Home Assistant - Home automation platform
+  homeassistant:
+    image: homeassistant/home-assistant:latest
+    container_name: homeassistant
+    restart: unless-stopped
+    network_mode: host
+    privileged: true
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - homeassistant-config:/config
+    # Uncomment for USB devices (Zigbee, Z-Wave)
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    #   - /dev/ttyACM0:/dev/ttyACM0
+
+  # Mosquitto - MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    restart: unless-stopped
+    networks:
+      - automation
+      - proxy
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-logs:/mosquitto/logs
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  # Node-RED - Visual programming for automation
+  nodered:
+    image: nodered/node-red:latest
+    container_name: nodered
+    restart: unless-stopped
+    networks:
+      - proxy
+      - automation
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - nodered-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nodered.entrypoints=http"
+      - "traefik.http.routers.nodered.rule=Host(`nodered.${DOMAIN}`)"
+      - "traefik.http.middlewares.nodered-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.nodered.middlewares=nodered-https-redirect"
+      - "traefik.http.routers.nodered-secure.entrypoints=https"
+      - "traefik.http.routers.nodered-secure.rule=Host(`nodered.${DOMAIN}`)"
+      - "traefik.http.routers.nodered-secure.tls=true"
+      - "traefik.http.routers.nodered-secure.service=nodered"
+      - "traefik.http.services.nodered.loadbalancer.server.port=1880"
+      - "traefik.docker.network=proxy"
+
+networks:
+  proxy:
+    external: true
+  automation:
+    driver: bridge
+
+volumes:
+  homeassistant-config:
+  mosquitto-data:
+  mosquitto-logs:
+  nodered-data:

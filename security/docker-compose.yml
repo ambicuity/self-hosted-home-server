@@ -1,0 +1,123 @@
+version: '3.8'
+
+# Security Services Stack
+# Authelia: SSO and 2FA | Fail2ban: Intrusion prevention | CrowdSec: Modern security engine
+
+services:
+  # Authelia - Authentication and authorization server
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    restart: unless-stopped
+    networks:
+      - proxy
+      - security
+    depends_on:
+      - authelia-redis
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - authelia-config:/config
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.authelia.entrypoints=http"
+      - "traefik.http.routers.authelia.rule=Host(`auth.${DOMAIN}`)"
+      - "traefik.http.middlewares.authelia-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.authelia.middlewares=authelia-https-redirect"
+      - "traefik.http.routers.authelia-secure.entrypoints=https"
+      - "traefik.http.routers.authelia-secure.rule=Host(`auth.${DOMAIN}`)"
+      - "traefik.http.routers.authelia-secure.tls=true"
+      - "traefik.http.routers.authelia-secure.service=authelia"
+      - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+      - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/verify?rd=https://auth.${DOMAIN}"
+      - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.authelia.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email"
+      - "traefik.docker.network=proxy"
+
+  authelia-redis:
+    image: redis:alpine
+    container_name: authelia-redis
+    restart: unless-stopped
+    networks:
+      - security
+    volumes:
+      - authelia-redis:/data
+
+  # Fail2ban - Intrusion prevention
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: fail2ban
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - TZ=${TZ}
+      - F2B_LOG_LEVEL=INFO
+      - F2B_DB_PURGE_AGE=30d
+    volumes:
+      - fail2ban-data:/data
+      - /var/log:/var/log:ro
+
+  # CrowdSec - Collaborative security engine
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: crowdsec
+    restart: unless-stopped
+    networks:
+      - security
+    environment:
+      - GID=${GID}
+      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/http-cve
+    volumes:
+      - crowdsec-config:/etc/crowdsec
+      - crowdsec-data:/var/lib/crowdsec/data
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # CrowdSec Traefik Bouncer
+  crowdsec-traefik-bouncer:
+    image: fbonalair/traefik-crowdsec-bouncer:latest
+    container_name: crowdsec-traefik-bouncer
+    restart: unless-stopped
+    networks:
+      - proxy
+      - security
+    depends_on:
+      - crowdsec
+    environment:
+      - CROWDSEC_BOUNCER_API_KEY=${CROWDSEC_API_KEY}
+      - CROWDSEC_AGENT_HOST=crowdsec:8080
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.crowdsec-bouncer.forwardauth.address=http://crowdsec-traefik-bouncer:8080/api/v1/forwardAuth"
+      - "traefik.http.middlewares.crowdsec-bouncer.forwardauth.trustForwardHeader=true"
+      - "traefik.docker.network=proxy"
+
+  # Wazuh Agent - Security monitoring
+  wazuh-agent:
+    image: wazuh/wazuh-agent:latest
+    container_name: wazuh-agent
+    restart: unless-stopped
+    networks:
+      - security
+    environment:
+      - WAZUH_MANAGER=${WAZUH_MANAGER}
+      - WAZUH_AGENT_NAME=home-server
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+networks:
+  proxy:
+    external: true
+  security:
+    driver: bridge
+
+volumes:
+  authelia-config:
+  authelia-redis:
+  fail2ban-data:
+  crowdsec-config:
+  crowdsec-data:

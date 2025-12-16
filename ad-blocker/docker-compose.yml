@@ -1,0 +1,72 @@
+version: '3.8'
+
+# Network-wide Ad Blocking with Pi-hole + Unbound DNS
+# Pi-hole: Blocks ads and tracking at DNS level
+# Unbound: Your own recursive DNS resolver for privacy
+
+services:
+  # Unbound - Recursive DNS resolver
+  unbound:
+    image: mvance/unbound:latest
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      pihole:
+        ipv4_address: 172.20.0.2
+    volumes:
+      - ./unbound:/opt/unbound/etc/unbound
+    ports:
+      - "5335:53/tcp"
+      - "5335:53/udp"
+
+  # Pi-hole - Network-wide ad blocker
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart: unless-stopped
+    networks:
+      - proxy
+      pihole:
+        ipv4_address: 172.20.0.3
+    depends_on:
+      - unbound
+    environment:
+      - TZ=${TZ}
+      - WEBPASSWORD=${PIHOLE_PASSWORD}
+      - PIHOLE_DNS_=172.20.0.2#53
+      - DNSSEC=true
+      - DNSMASQ_LISTENING=all
+    volumes:
+      - pihole-data:/etc/pihole
+      - pihole-dnsmasq:/etc/dnsmasq.d
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    dns:
+      - 127.0.0.1
+      - 172.20.0.2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pihole.entrypoints=http"
+      - "traefik.http.routers.pihole.rule=Host(`pihole.${DOMAIN}`)"
+      - "traefik.http.middlewares.pihole-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.pihole.middlewares=pihole-https-redirect"
+      - "traefik.http.routers.pihole-secure.entrypoints=https"
+      - "traefik.http.routers.pihole-secure.rule=Host(`pihole.${DOMAIN}`)"
+      - "traefik.http.routers.pihole-secure.tls=true"
+      - "traefik.http.routers.pihole-secure.service=pihole"
+      - "traefik.http.services.pihole.loadbalancer.server.port=80"
+      - "traefik.docker.network=proxy"
+
+networks:
+  proxy:
+    external: true
+  pihole:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+volumes:
+  pihole-data:
+  pihole-dnsmasq:

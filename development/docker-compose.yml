@@ -1,0 +1,138 @@
+version: '3.8'
+
+# Development Tools Stack
+# Code Server: VS Code in browser | GitLab: Complete DevOps platform | Docker Registry
+
+services:
+  # Code Server - VS Code in your browser
+  code-server:
+    image: linuxserver/code-server:latest
+    container_name: code-server
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - PASSWORD=${CODE_SERVER_PASSWORD}
+      - SUDO_PASSWORD=${CODE_SERVER_SUDO_PASSWORD}
+    volumes:
+      - code-server-config:/config
+      - ${PROJECT_PATH}:/config/workspace
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.code.entrypoints=http"
+      - "traefik.http.routers.code.rule=Host(`code.${DOMAIN}`)"
+      - "traefik.http.middlewares.code-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.code.middlewares=code-https-redirect"
+      - "traefik.http.routers.code-secure.entrypoints=https"
+      - "traefik.http.routers.code-secure.rule=Host(`code.${DOMAIN}`)"
+      - "traefik.http.routers.code-secure.tls=true"
+      - "traefik.http.routers.code-secure.service=code"
+      - "traefik.http.services.code.loadbalancer.server.port=8443"
+      - "traefik.docker.network=proxy"
+
+  # Docker Registry - Private container registry
+  registry:
+    image: registry:2
+    container_name: docker-registry
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - REGISTRY_AUTH=htpasswd
+      - REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm
+      - REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+    volumes:
+      - registry-data:/var/lib/registry
+      - ./registry/auth:/auth
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.registry.entrypoints=http"
+      - "traefik.http.routers.registry.rule=Host(`registry.${DOMAIN}`)"
+      - "traefik.http.middlewares.registry-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.registry.middlewares=registry-https-redirect"
+      - "traefik.http.routers.registry-secure.entrypoints=https"
+      - "traefik.http.routers.registry-secure.rule=Host(`registry.${DOMAIN}`)"
+      - "traefik.http.routers.registry-secure.tls=true"
+      - "traefik.http.routers.registry-secure.service=registry"
+      - "traefik.http.services.registry.loadbalancer.server.port=5000"
+      - "traefik.docker.network=proxy"
+
+  # Registry UI - Web interface for Docker Registry
+  registry-ui:
+    image: joxit/docker-registry-ui:latest
+    container_name: registry-ui
+    restart: unless-stopped
+    networks:
+      - proxy
+    depends_on:
+      - registry
+    environment:
+      - SINGLE_REGISTRY=true
+      - REGISTRY_TITLE=My Docker Registry
+      - REGISTRY_URL=https://registry.${DOMAIN}
+      - DELETE_IMAGES=true
+      - SHOW_CONTENT_DIGEST=true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.registry-ui.entrypoints=http"
+      - "traefik.http.routers.registry-ui.rule=Host(`registry-ui.${DOMAIN}`)"
+      - "traefik.http.middlewares.registry-ui-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.registry-ui.middlewares=registry-ui-https-redirect"
+      - "traefik.http.routers.registry-ui-secure.entrypoints=https"
+      - "traefik.http.routers.registry-ui-secure.rule=Host(`registry-ui.${DOMAIN}`)"
+      - "traefik.http.routers.registry-ui-secure.tls=true"
+      - "traefik.http.routers.registry-ui-secure.service=registry-ui"
+      - "traefik.http.services.registry-ui.loadbalancer.server.port=80"
+      - "traefik.docker.network=proxy"
+
+  # Postgres for development
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: postgres-dev
+    restart: unless-stopped
+    networks:
+      - development
+    environment:
+      - POSTGRES_USER=dev
+      - POSTGRES_PASSWORD=${POSTGRES_DEV_PASSWORD}
+      - POSTGRES_DB=development
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  # Adminer for database management
+  adminer-dev:
+    image: adminer:latest
+    container_name: adminer-dev
+    restart: unless-stopped
+    networks:
+      - proxy
+      - development
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adminer-dev.entrypoints=http"
+      - "traefik.http.routers.adminer-dev.rule=Host(`db-admin.${DOMAIN}`)"
+      - "traefik.http.middlewares.adminer-dev-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.adminer-dev.middlewares=adminer-dev-https-redirect"
+      - "traefik.http.routers.adminer-dev-secure.entrypoints=https"
+      - "traefik.http.routers.adminer-dev-secure.rule=Host(`db-admin.${DOMAIN}`)"
+      - "traefik.http.routers.adminer-dev-secure.tls=true"
+      - "traefik.http.routers.adminer-dev-secure.service=adminer-dev"
+      - "traefik.http.services.adminer-dev.loadbalancer.server.port=8080"
+      - "traefik.docker.network=proxy"
+
+networks:
+  proxy:
+    external: true
+  development:
+    driver: bridge
+
+volumes:
+  code-server-config:
+  registry-data:
+  postgres-dev-data:

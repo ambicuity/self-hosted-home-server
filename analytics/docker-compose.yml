@@ -1,0 +1,159 @@
+version: '3.8'
+
+# Analytics Stack
+# Matomo: Comprehensive analytics | Plausible: Privacy-friendly | Umami: Simple, fast
+
+services:
+  # Matomo - Comprehensive web analytics
+  matomo:
+    image: matomo:latest
+    container_name: matomo
+    restart: unless-stopped
+    networks:
+      - proxy
+      - analytics
+    depends_on:
+      - matomo-db
+    environment:
+      - MATOMO_DATABASE_HOST=matomo-db
+      - MATOMO_DATABASE_ADAPTER=mysql
+      - MATOMO_DATABASE_TABLES_PREFIX=matomo_
+      - MATOMO_DATABASE_USERNAME=matomo
+      - MATOMO_DATABASE_PASSWORD=${MATOMO_DB_PASSWORD}
+      - MATOMO_DATABASE_DBNAME=matomo
+    volumes:
+      - matomo-data:/var/www/html
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.matomo.entrypoints=http"
+      - "traefik.http.routers.matomo.rule=Host(`analytics.${DOMAIN}`)"
+      - "traefik.http.middlewares.matomo-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.matomo.middlewares=matomo-https-redirect"
+      - "traefik.http.routers.matomo-secure.entrypoints=https"
+      - "traefik.http.routers.matomo-secure.rule=Host(`analytics.${DOMAIN}`)"
+      - "traefik.http.routers.matomo-secure.tls=true"
+      - "traefik.http.routers.matomo-secure.service=matomo"
+      - "traefik.http.services.matomo.loadbalancer.server.port=80"
+      - "traefik.docker.network=proxy"
+
+  matomo-db:
+    image: mariadb:10
+    container_name: matomo-db
+    restart: unless-stopped
+    networks:
+      - analytics
+    command: --max-allowed-packet=64MB
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MATOMO_DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=matomo
+      - MYSQL_USER=matomo
+      - MYSQL_PASSWORD=${MATOMO_DB_PASSWORD}
+    volumes:
+      - matomo-db:/var/lib/mysql
+
+  # Plausible - Privacy-focused analytics
+  plausible:
+    image: plausible/analytics:latest
+    container_name: plausible
+    restart: unless-stopped
+    networks:
+      - proxy
+      - analytics
+    depends_on:
+      - plausible-db
+      - plausible-events-db
+    command: sh -c "sleep 10 && /entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"
+    environment:
+      - BASE_URL=https://plausible.${DOMAIN}
+      - SECRET_KEY_BASE=${PLAUSIBLE_SECRET_KEY}
+      - DATABASE_URL=postgres://plausible:${PLAUSIBLE_DB_PASSWORD}@plausible-db:5432/plausible
+      - CLICKHOUSE_DATABASE_URL=http://plausible-events-db:8123/plausible_events_db
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plausible.entrypoints=http"
+      - "traefik.http.routers.plausible.rule=Host(`plausible.${DOMAIN}`)"
+      - "traefik.http.middlewares.plausible-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.plausible.middlewares=plausible-https-redirect"
+      - "traefik.http.routers.plausible-secure.entrypoints=https"
+      - "traefik.http.routers.plausible-secure.rule=Host(`plausible.${DOMAIN}`)"
+      - "traefik.http.routers.plausible-secure.tls=true"
+      - "traefik.http.routers.plausible-secure.service=plausible"
+      - "traefik.http.services.plausible.loadbalancer.server.port=8000"
+      - "traefik.docker.network=proxy"
+
+  plausible-db:
+    image: postgres:14-alpine
+    container_name: plausible-db
+    restart: unless-stopped
+    networks:
+      - analytics
+    environment:
+      - POSTGRES_DB=plausible
+      - POSTGRES_USER=plausible
+      - POSTGRES_PASSWORD=${PLAUSIBLE_DB_PASSWORD}
+    volumes:
+      - plausible-db:/var/lib/postgresql/data
+
+  plausible-events-db:
+    image: clickhouse/clickhouse-server:latest
+    container_name: plausible-events-db
+    restart: unless-stopped
+    networks:
+      - analytics
+    volumes:
+      - plausible-events-db:/var/lib/clickhouse
+      - ./plausible/clickhouse-config.xml:/etc/clickhouse-server/config.d/logging.xml:ro
+      - ./plausible/clickhouse-user-config.xml:/etc/clickhouse-server/users.d/logging.xml:ro
+
+  # Umami - Simple, fast analytics
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    container_name: umami
+    restart: unless-stopped
+    networks:
+      - proxy
+      - analytics
+    depends_on:
+      - umami-db
+    environment:
+      - DATABASE_URL=postgresql://umami:${UMAMI_DB_PASSWORD}@umami-db:5432/umami
+      - DATABASE_TYPE=postgresql
+      - APP_SECRET=${UMAMI_APP_SECRET}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.umami.entrypoints=http"
+      - "traefik.http.routers.umami.rule=Host(`umami.${DOMAIN}`)"
+      - "traefik.http.middlewares.umami-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.umami.middlewares=umami-https-redirect"
+      - "traefik.http.routers.umami-secure.entrypoints=https"
+      - "traefik.http.routers.umami-secure.rule=Host(`umami.${DOMAIN}`)"
+      - "traefik.http.routers.umami-secure.tls=true"
+      - "traefik.http.routers.umami-secure.service=umami"
+      - "traefik.http.services.umami.loadbalancer.server.port=3000"
+      - "traefik.docker.network=proxy"
+
+  umami-db:
+    image: postgres:15-alpine
+    container_name: umami-db
+    restart: unless-stopped
+    networks:
+      - analytics
+    environment:
+      - POSTGRES_DB=umami
+      - POSTGRES_USER=umami
+      - POSTGRES_PASSWORD=${UMAMI_DB_PASSWORD}
+    volumes:
+      - umami-db:/var/lib/postgresql/data
+
+networks:
+  proxy:
+    external: true
+  analytics:
+    driver: bridge
+
+volumes:
+  matomo-data:
+  matomo-db:
+  plausible-db:
+  plausible-events-db:
+  umami-db:

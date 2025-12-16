@@ -1,0 +1,242 @@
+version: '3.8'
+
+# Communication Stack
+# Matrix Synapse: Decentralized chat | Jitsi Meet: Video conferencing | Mattermost: Team chat
+
+services:
+  # Matrix Synapse - Decentralized communication
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: matrix-synapse
+    restart: unless-stopped
+    networks:
+      - proxy
+      - communication
+    depends_on:
+      - synapse-db
+    environment:
+      - SYNAPSE_SERVER_NAME=${DOMAIN}
+      - SYNAPSE_REPORT_STATS=no
+      - POSTGRES_HOST=synapse-db
+      - POSTGRES_DB=synapse
+      - POSTGRES_USER=synapse
+      - POSTGRES_PASSWORD=${SYNAPSE_DB_PASSWORD}
+    volumes:
+      - synapse-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.matrix.entrypoints=http"
+      - "traefik.http.routers.matrix.rule=Host(`matrix.${DOMAIN}`)"
+      - "traefik.http.middlewares.matrix-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.matrix.middlewares=matrix-https-redirect"
+      - "traefik.http.routers.matrix-secure.entrypoints=https"
+      - "traefik.http.routers.matrix-secure.rule=Host(`matrix.${DOMAIN}`)"
+      - "traefik.http.routers.matrix-secure.tls=true"
+      - "traefik.http.routers.matrix-secure.service=matrix"
+      - "traefik.http.services.matrix.loadbalancer.server.port=8008"
+      - "traefik.docker.network=proxy"
+
+  synapse-db:
+    image: postgres:15-alpine
+    container_name: synapse-db
+    restart: unless-stopped
+    networks:
+      - communication
+    environment:
+      - POSTGRES_DB=synapse
+      - POSTGRES_USER=synapse
+      - POSTGRES_PASSWORD=${SYNAPSE_DB_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - synapse-db:/var/lib/postgresql/data
+
+  # Element Web - Matrix web client
+  element:
+    image: vectorim/element-web:latest
+    container_name: element-web
+    restart: unless-stopped
+    networks:
+      - proxy
+    volumes:
+      - ./element/config.json:/app/config.json:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.element.entrypoints=http"
+      - "traefik.http.routers.element.rule=Host(`chat.${DOMAIN}`)"
+      - "traefik.http.middlewares.element-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.element.middlewares=element-https-redirect"
+      - "traefik.http.routers.element-secure.entrypoints=https"
+      - "traefik.http.routers.element-secure.rule=Host(`chat.${DOMAIN}`)"
+      - "traefik.http.routers.element-secure.tls=true"
+      - "traefik.http.routers.element-secure.service=element"
+      - "traefik.http.services.element.loadbalancer.server.port=80"
+      - "traefik.docker.network=proxy"
+
+  # Jitsi Meet - Video conferencing
+  jitsi-web:
+    image: jitsi/web:latest
+    container_name: jitsi-web
+    restart: unless-stopped
+    networks:
+      - proxy
+      - communication
+    depends_on:
+      - jitsi-prosody
+      - jitsi-jicofo
+      - jitsi-jvb
+    environment:
+      - ENABLE_AUTH=0
+      - ENABLE_GUESTS=1
+      - ENABLE_LETSENCRYPT=0
+      - ENABLE_HTTP_REDIRECT=1
+      - ENABLE_TRANSCRIPTIONS=0
+      - DISABLE_HTTPS=1
+      - JICOFO_AUTH_USER=focus
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_BOSH_URL_BASE=http://jitsi-prosody:5280
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - TZ=${TZ}
+      - PUBLIC_URL=https://meet.${DOMAIN}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jitsi.entrypoints=http"
+      - "traefik.http.routers.jitsi.rule=Host(`meet.${DOMAIN}`)"
+      - "traefik.http.middlewares.jitsi-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.jitsi.middlewares=jitsi-https-redirect"
+      - "traefik.http.routers.jitsi-secure.entrypoints=https"
+      - "traefik.http.routers.jitsi-secure.rule=Host(`meet.${DOMAIN}`)"
+      - "traefik.http.routers.jitsi-secure.tls=true"
+      - "traefik.http.routers.jitsi-secure.service=jitsi"
+      - "traefik.http.services.jitsi.loadbalancer.server.port=80"
+      - "traefik.docker.network=proxy"
+
+  jitsi-prosody:
+    image: jitsi/prosody:latest
+    container_name: jitsi-prosody
+    restart: unless-stopped
+    networks:
+      - communication
+    environment:
+      - ENABLE_AUTH=0
+      - ENABLE_GUESTS=1
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - JICOFO_COMPONENT_SECRET=${JITSI_JICOFO_SECRET}
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=${JITSI_JVB_PASSWORD}
+      - JICOFO_AUTH_USER=focus
+      - JICOFO_AUTH_PASSWORD=${JITSI_JICOFO_PASSWORD}
+      - TZ=${TZ}
+    volumes:
+      - jitsi-prosody-config:/config
+      - jitsi-prosody-plugins:/prosody-plugins-custom
+
+  jitsi-jicofo:
+    image: jitsi/jicofo:latest
+    container_name: jitsi-jicofo
+    restart: unless-stopped
+    networks:
+      - communication
+    depends_on:
+      - jitsi-prosody
+    environment:
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - JICOFO_COMPONENT_SECRET=${JITSI_JICOFO_SECRET}
+      - JICOFO_AUTH_USER=focus
+      - JICOFO_AUTH_PASSWORD=${JITSI_JICOFO_PASSWORD}
+      - TZ=${TZ}
+    volumes:
+      - jitsi-jicofo-config:/config
+
+  jitsi-jvb:
+    image: jitsi/jvb:latest
+    container_name: jitsi-jvb
+    restart: unless-stopped
+    networks:
+      - communication
+    depends_on:
+      - jitsi-prosody
+    environment:
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=${JITSI_JVB_PASSWORD}
+      - JVB_STUN_SERVERS=stun.l.google.com:19302
+      - JICOFO_AUTH_USER=focus
+      - TZ=${TZ}
+    ports:
+      - "10000:10000/udp"
+    volumes:
+      - jitsi-jvb-config:/config
+
+  # Mattermost - Team collaboration platform
+  mattermost:
+    image: mattermost/mattermost-team-edition:latest
+    container_name: mattermost
+    restart: unless-stopped
+    networks:
+      - proxy
+      - communication
+    depends_on:
+      - mattermost-db
+    environment:
+      - MM_SQLSETTINGS_DRIVERNAME=postgres
+      - MM_SQLSETTINGS_DATASOURCE=postgres://mattermost:${MATTERMOST_DB_PASSWORD}@mattermost-db:5432/mattermost?sslmode=disable&connect_timeout=10
+      - MM_SERVICESETTINGS_SITEURL=https://mattermost.${DOMAIN}
+      - TZ=${TZ}
+    volumes:
+      - mattermost-config:/mattermost/config
+      - mattermost-data:/mattermost/data
+      - mattermost-logs:/mattermost/logs
+      - mattermost-plugins:/mattermost/plugins
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mattermost.entrypoints=http"
+      - "traefik.http.routers.mattermost.rule=Host(`mattermost.${DOMAIN}`)"
+      - "traefik.http.middlewares.mattermost-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.mattermost.middlewares=mattermost-https-redirect"
+      - "traefik.http.routers.mattermost-secure.entrypoints=https"
+      - "traefik.http.routers.mattermost-secure.rule=Host(`mattermost.${DOMAIN}`)"
+      - "traefik.http.routers.mattermost-secure.tls=true"
+      - "traefik.http.routers.mattermost-secure.service=mattermost"
+      - "traefik.http.services.mattermost.loadbalancer.server.port=8065"
+      - "traefik.docker.network=proxy"
+
+  mattermost-db:
+    image: postgres:15-alpine
+    container_name: mattermost-db
+    restart: unless-stopped
+    networks:
+      - communication
+    environment:
+      - POSTGRES_DB=mattermost
+      - POSTGRES_USER=mattermost
+      - POSTGRES_PASSWORD=${MATTERMOST_DB_PASSWORD}
+    volumes:
+      - mattermost-db:/var/lib/postgresql/data
+
+networks:
+  proxy:
+    external: true
+  communication:
+    driver: bridge
+
+volumes:
+  synapse-data:
+  synapse-db:
+  jitsi-prosody-config:
+  jitsi-prosody-plugins:
+  jitsi-jicofo-config:
+  jitsi-jvb-config:
+  mattermost-config:
+  mattermost-data:
+  mattermost-logs:
+  mattermost-plugins:
+  mattermost-db:

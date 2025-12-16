@@ -1,0 +1,110 @@
+version: '3.8'
+
+# Nextcloud - Your own cloud storage solution
+# Like Google Drive/Dropbox but you control your data
+# Includes Collabora Office for online document editing
+
+services:
+  # PostgreSQL database for Nextcloud
+  nextcloud-db:
+    image: postgres:15-alpine
+    container_name: nextcloud-db
+    restart: unless-stopped
+    networks:
+      - nextcloud
+    environment:
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - nextcloud-db:/var/lib/postgresql/data
+
+  # Redis cache for better performance
+  nextcloud-redis:
+    image: redis:alpine
+    container_name: nextcloud-redis
+    restart: unless-stopped
+    networks:
+      - nextcloud
+
+  # Nextcloud application
+  nextcloud:
+    image: nextcloud:latest
+    container_name: nextcloud
+    restart: unless-stopped
+    networks:
+      - proxy
+      - nextcloud
+    depends_on:
+      - nextcloud-db
+      - nextcloud-redis
+    environment:
+      - POSTGRES_HOST=nextcloud-db
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=nextcloud-redis
+      - NEXTCLOUD_ADMIN_USER=${ADMIN_USER}
+      - NEXTCLOUD_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - NEXTCLOUD_TRUSTED_DOMAINS=${DOMAIN}
+      - OVERWRITEPROTOCOL=https
+      - OVERWRITEHOST=nextcloud.${DOMAIN}
+    volumes:
+      - nextcloud-data:/var/www/html
+      - ${DATA_PATH}:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextcloud.entrypoints=http"
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
+      - "traefik.http.middlewares.nextcloud-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud-https-redirect"
+      - "traefik.http.routers.nextcloud-secure.entrypoints=https"
+      - "traefik.http.routers.nextcloud-secure.rule=Host(`nextcloud.${DOMAIN}`)"
+      - "traefik.http.routers.nextcloud-secure.tls=true"
+      - "traefik.http.routers.nextcloud-secure.service=nextcloud"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+      - "traefik.http.routers.nextcloud-secure.middlewares=nextcloud-dav,nextcloud-headers"
+      - "traefik.http.middlewares.nextcloud-dav.replacepathregex.regex=^/.well-known/ca(l|rd)dav"
+      - "traefik.http.middlewares.nextcloud-dav.replacepathregex.replacement=/remote.php/dav/"
+      - "traefik.http.middlewares.nextcloud-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+      - "traefik.http.middlewares.nextcloud-headers.headers.stsSeconds=155520011"
+      - "traefik.http.middlewares.nextcloud-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.nextcloud-headers.headers.stsPreload=true"
+      - "traefik.docker.network=proxy"
+
+  # Collabora Office - Online document editing
+  collabora:
+    image: collabora/code:latest
+    container_name: collabora
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - domain=nextcloud.${DOMAIN}
+      - username=${COLLABORA_USER}
+      - password=${COLLABORA_PASSWORD}
+      - extra_params=--o:ssl.enable=false --o:ssl.termination=true
+    cap_add:
+      - MKNOD
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.collabora.entrypoints=http"
+      - "traefik.http.routers.collabora.rule=Host(`office.${DOMAIN}`)"
+      - "traefik.http.middlewares.collabora-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.collabora.middlewares=collabora-https-redirect"
+      - "traefik.http.routers.collabora-secure.entrypoints=https"
+      - "traefik.http.routers.collabora-secure.rule=Host(`office.${DOMAIN}`)"
+      - "traefik.http.routers.collabora-secure.tls=true"
+      - "traefik.http.routers.collabora-secure.service=collabora"
+      - "traefik.http.services.collabora.loadbalancer.server.port=9980"
+      - "traefik.docker.network=proxy"
+
+networks:
+  proxy:
+    external: true
+  nextcloud:
+    internal: true
+
+volumes:
+  nextcloud-db:
+  nextcloud-data:

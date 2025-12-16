@@ -1,0 +1,97 @@
+version: '3.8'
+
+# Backup Solutions Stack
+# Duplicati: User-friendly backup | Restic: Fast, secure backup
+
+services:
+  # Duplicati - Encrypted cloud backup
+  duplicati:
+    image: linuxserver/duplicati:latest
+    container_name: duplicati
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - duplicati-config:/config
+      - ${BACKUP_SOURCE}:/source:ro
+      - ${BACKUP_DEST}:/backups
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.duplicati.entrypoints=http"
+      - "traefik.http.routers.duplicati.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.middlewares.duplicati-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.duplicati.middlewares=duplicati-https-redirect"
+      - "traefik.http.routers.duplicati-secure.entrypoints=https"
+      - "traefik.http.routers.duplicati-secure.rule=Host(`backup.${DOMAIN}`)"
+      - "traefik.http.routers.duplicati-secure.tls=true"
+      - "traefik.http.routers.duplicati-secure.service=duplicati"
+      - "traefik.http.services.duplicati.loadbalancer.server.port=8200"
+      - "traefik.docker.network=proxy"
+
+  # Restic server - Backup repository server
+  restic:
+    image: restic/rest-server:latest
+    container_name: restic
+    restart: unless-stopped
+    networks:
+      - proxy
+    command: --path /data --no-auth
+    volumes:
+      - restic-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.restic.entrypoints=http"
+      - "traefik.http.routers.restic.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.middlewares.restic-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.restic.middlewares=restic-https-redirect"
+      - "traefik.http.routers.restic-secure.entrypoints=https"
+      - "traefik.http.routers.restic-secure.rule=Host(`restic.${DOMAIN}`)"
+      - "traefik.http.routers.restic-secure.tls=true"
+      - "traefik.http.routers.restic-secure.service=restic"
+      - "traefik.http.services.restic.loadbalancer.server.port=8000"
+      - "traefik.docker.network=proxy"
+
+  # Kopia - Fast and secure backup tool
+  kopia:
+    image: kopia/kopia:latest
+    container_name: kopia
+    restart: unless-stopped
+    networks:
+      - proxy
+    hostname: kopia-server
+    command: server start --insecure --address=0.0.0.0:51515 --server-username=${KOPIA_USER} --server-password=${KOPIA_PASSWORD}
+    environment:
+      - KOPIA_PASSWORD=${KOPIA_PASSWORD}
+    volumes:
+      - kopia-config:/app/config
+      - kopia-cache:/app/cache
+      - kopia-logs:/app/logs
+      - ${KOPIA_REPO_PATH}:/repository
+      - ${BACKUP_SOURCE}:/data:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kopia.entrypoints=http"
+      - "traefik.http.routers.kopia.rule=Host(`kopia.${DOMAIN}`)"
+      - "traefik.http.middlewares.kopia-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.kopia.middlewares=kopia-https-redirect"
+      - "traefik.http.routers.kopia-secure.entrypoints=https"
+      - "traefik.http.routers.kopia-secure.rule=Host(`kopia.${DOMAIN}`)"
+      - "traefik.http.routers.kopia-secure.tls=true"
+      - "traefik.http.routers.kopia-secure.service=kopia"
+      - "traefik.http.services.kopia.loadbalancer.server.port=51515"
+      - "traefik.docker.network=proxy"
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  duplicati-config:
+  restic-data:
+  kopia-config:
+  kopia-cache:
+  kopia-logs:
