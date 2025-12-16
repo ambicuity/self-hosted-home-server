@@ -1,0 +1,78 @@
+version: '3.8'
+
+# WireGuard VPN Server with Web UI
+# Secure remote access to your home network
+# Easy client configuration through web interface
+
+services:
+  # WireGuard VPN Server
+  wireguard:
+    image: linuxserver/wireguard:latest
+    container_name: wireguard
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - SERVERURL=${SERVER_URL}
+      - SERVERPORT=${SERVER_PORT}
+      - PEERS=${PEERS}
+      - PEERDNS=${PEERDNS}
+      - INTERNAL_SUBNET=${INTERNAL_SUBNET}
+      - ALLOWEDIPS=${ALLOWEDIPS}
+    volumes:
+      - wireguard-config:/config
+      - /lib/modules:/lib/modules
+    ports:
+      - "${SERVER_PORT}:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+
+  # WireGuard UI - Web interface for easier management
+  wireguard-ui:
+    image: ngoduykhanh/wireguard-ui:latest
+    container_name: wireguard-ui
+    restart: unless-stopped
+    networks:
+      - proxy
+    depends_on:
+      - wireguard
+    environment:
+      - SENDGRID_API_KEY
+      - EMAIL_FROM_ADDRESS
+      - EMAIL_FROM_NAME
+      - SESSION_SECRET=${UI_SESSION_SECRET}
+      - WGUI_USERNAME=${UI_USERNAME}
+      - WGUI_PASSWORD=${UI_PASSWORD}
+      - WGUI_ENDPOINT_ADDRESS=${SERVER_URL}
+      - WGUI_DNS=${PEERDNS}
+      - WGUI_MTU=1420
+      - WGUI_PERSISTENT_KEEPALIVE=25
+    volumes:
+      - wireguard-ui-db:/app/db
+      - wireguard-config:/etc/wireguard
+    cap_add:
+      - NET_ADMIN
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wireguard-ui.entrypoints=http"
+      - "traefik.http.routers.wireguard-ui.rule=Host(`vpn.${DOMAIN}`)"
+      - "traefik.http.middlewares.wireguard-ui-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.wireguard-ui.middlewares=wireguard-ui-https-redirect"
+      - "traefik.http.routers.wireguard-ui-secure.entrypoints=https"
+      - "traefik.http.routers.wireguard-ui-secure.rule=Host(`vpn.${DOMAIN}`)"
+      - "traefik.http.routers.wireguard-ui-secure.tls=true"
+      - "traefik.http.routers.wireguard-ui-secure.service=wireguard-ui"
+      - "traefik.http.services.wireguard-ui.loadbalancer.server.port=5000"
+      - "traefik.docker.network=proxy"
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  wireguard-config:
+  wireguard-ui-db:

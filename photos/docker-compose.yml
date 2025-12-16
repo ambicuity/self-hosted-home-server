@@ -1,0 +1,146 @@
+version: '3.8'
+
+# Photo Management Stack
+# PhotoPrism: AI-powered photo management | Immich: High-performance alternative
+
+services:
+  # PhotoPrism - AI-Powered Photo Management
+  photoprism:
+    image: photoprism/photoprism:latest
+    container_name: photoprism
+    restart: unless-stopped
+    networks:
+      - proxy
+      - photos
+    depends_on:
+      - photoprism-db
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    environment:
+      - PHOTOPRISM_ADMIN_USER=${PHOTOPRISM_ADMIN_USER}
+      - PHOTOPRISM_ADMIN_PASSWORD=${PHOTOPRISM_ADMIN_PASSWORD}
+      - PHOTOPRISM_AUTH_MODE=password
+      - PHOTOPRISM_SITE_URL=https://photos.${DOMAIN}
+      - PHOTOPRISM_DISABLE_TLS=true
+      - PHOTOPRISM_DEFAULT_TLS=false
+      - PHOTOPRISM_ORIGINALS_LIMIT=5000
+      - PHOTOPRISM_HTTP_COMPRESSION=gzip
+      - PHOTOPRISM_DATABASE_DRIVER=mysql
+      - PHOTOPRISM_DATABASE_SERVER=photoprism-db:3306
+      - PHOTOPRISM_DATABASE_NAME=photoprism
+      - PHOTOPRISM_DATABASE_USER=photoprism
+      - PHOTOPRISM_DATABASE_PASSWORD=${DB_PASSWORD}
+      - PHOTOPRISM_SITE_CAPTION=My Photos
+      - PHOTOPRISM_SITE_DESCRIPTION=Personal Photo Library
+      - PHOTOPRISM_SITE_AUTHOR=
+    working_dir: /photoprism
+    volumes:
+      - ${PHOTOS_PATH}:/photoprism/originals
+      - photoprism-storage:/photoprism/storage
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.photoprism.entrypoints=http"
+      - "traefik.http.routers.photoprism.rule=Host(`photos.${DOMAIN}`)"
+      - "traefik.http.middlewares.photoprism-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.photoprism.middlewares=photoprism-https-redirect"
+      - "traefik.http.routers.photoprism-secure.entrypoints=https"
+      - "traefik.http.routers.photoprism-secure.rule=Host(`photos.${DOMAIN}`)"
+      - "traefik.http.routers.photoprism-secure.tls=true"
+      - "traefik.http.routers.photoprism-secure.service=photoprism"
+      - "traefik.http.services.photoprism.loadbalancer.server.port=2342"
+      - "traefik.docker.network=proxy"
+
+  photoprism-db:
+    image: mariadb:10
+    container_name: photoprism-db
+    restart: unless-stopped
+    networks:
+      - photos
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    command: mysqld --innodb-buffer-pool-size=512M --transaction-isolation=READ-COMMITTED --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=512 --innodb-rollback-on-timeout=OFF --innodb-lock-wait-timeout=120
+    volumes:
+      - photoprism-db:/var/lib/mysql
+    environment:
+      - MARIADB_AUTO_UPGRADE=1
+      - MARIADB_INITDB_SKIP_TZINFO=1
+      - MARIADB_DATABASE=photoprism
+      - MARIADB_USER=photoprism
+      - MARIADB_PASSWORD=${DB_PASSWORD}
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+
+  # Immich - High performance self-hosted photo and video backup
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    container_name: immich-server
+    restart: unless-stopped
+    networks:
+      - proxy
+      - photos
+    depends_on:
+      - immich-redis
+      - immich-postgres
+    environment:
+      - DB_HOSTNAME=immich-postgres
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=${IMMICH_DB_PASSWORD}
+      - DB_DATABASE_NAME=immich
+      - REDIS_HOSTNAME=immich-redis
+      - UPLOAD_LOCATION=${IMMICH_UPLOAD_PATH}
+    volumes:
+      - ${IMMICH_UPLOAD_PATH}:/usr/src/app/upload
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.immich.entrypoints=http"
+      - "traefik.http.routers.immich.rule=Host(`immich.${DOMAIN}`)"
+      - "traefik.http.middlewares.immich-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.immich.middlewares=immich-https-redirect"
+      - "traefik.http.routers.immich-secure.entrypoints=https"
+      - "traefik.http.routers.immich-secure.rule=Host(`immich.${DOMAIN}`)"
+      - "traefik.http.routers.immich-secure.tls=true"
+      - "traefik.http.routers.immich-secure.service=immich"
+      - "traefik.http.services.immich.loadbalancer.server.port=3001"
+      - "traefik.docker.network=proxy"
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    container_name: immich-ml
+    restart: unless-stopped
+    networks:
+      - photos
+    volumes:
+      - immich-model-cache:/cache
+
+  immich-redis:
+    image: redis:alpine
+    container_name: immich-redis
+    restart: unless-stopped
+    networks:
+      - photos
+
+  immich-postgres:
+    image: tensorchord/pgvecto-rs:pg14-v0.2.0
+    container_name: immich-postgres
+    restart: unless-stopped
+    networks:
+      - photos
+    environment:
+      - POSTGRES_PASSWORD=${IMMICH_DB_PASSWORD}
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=immich
+    volumes:
+      - immich-postgres:/var/lib/postgresql/data
+
+networks:
+  proxy:
+    external: true
+  photos:
+    driver: bridge
+
+volumes:
+  photoprism-storage:
+  photoprism-db:
+  immich-model-cache:
+  immich-postgres:

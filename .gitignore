@@ -1,0 +1,70 @@
+# Environment files with secrets
+.env
+*.env
+!.env.example
+
+# Generated certificates and keys
+acme.json
+*.pem
+*.key
+*.crt
+
+# Data directories
+data/
+*/data/
+**/data/
+
+# Config directories (keep structure, ignore generated configs)
+*/config/*
+!*/config/.gitkeep
+
+# Database files
+*.db
+*.sqlite
+*.sql
+
+# Logs
+*.log
+logs/
+*/logs/
+**/logs/
+
+# Backup files
+*.backup
+*.bak
+backups/
+*/backups/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Docker volumes
+volumes/
+
+# Node modules (if any)
+node_modules/
+
+# Python cache (if any)
+__pycache__/
+*.pyc
+*.pyo
+
+# Registry auth
+registry/auth/
+
+# Keep example files
+!*.example

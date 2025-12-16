@@ -1,0 +1,161 @@
+version: '3.8'
+
+# Productivity Tools Stack
+# BookStack: Documentation | Wiki.js: Modern wiki | Standard Notes: Encrypted notes
+
+services:
+  # BookStack - Documentation platform
+  bookstack:
+    image: linuxserver/bookstack:latest
+    container_name: bookstack
+    restart: unless-stopped
+    networks:
+      - proxy
+      - productivity
+    depends_on:
+      - bookstack-db
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - APP_URL=https://docs.${DOMAIN}
+      - DB_HOST=bookstack-db
+      - DB_PORT=3306
+      - DB_DATABASE=bookstack
+      - DB_USERNAME=bookstack
+      - DB_PASSWORD=${BOOKSTACK_DB_PASSWORD}
+    volumes:
+      - bookstack-config:/config
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bookstack.entrypoints=http"
+      - "traefik.http.routers.bookstack.rule=Host(`docs.${DOMAIN}`)"
+      - "traefik.http.middlewares.bookstack-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.bookstack.middlewares=bookstack-https-redirect"
+      - "traefik.http.routers.bookstack-secure.entrypoints=https"
+      - "traefik.http.routers.bookstack-secure.rule=Host(`docs.${DOMAIN}`)"
+      - "traefik.http.routers.bookstack-secure.tls=true"
+      - "traefik.http.routers.bookstack-secure.service=bookstack"
+      - "traefik.http.services.bookstack.loadbalancer.server.port=80"
+      - "traefik.docker.network=proxy"
+
+  bookstack-db:
+    image: mariadb:10
+    container_name: bookstack-db
+    restart: unless-stopped
+    networks:
+      - productivity
+    environment:
+      - MYSQL_ROOT_PASSWORD=${BOOKSTACK_DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=bookstack
+      - MYSQL_USER=bookstack
+      - MYSQL_PASSWORD=${BOOKSTACK_DB_PASSWORD}
+    volumes:
+      - bookstack-db:/var/lib/mysql
+
+  # Wiki.js - Modern wiki software
+  wikijs:
+    image: ghcr.io/requarks/wiki:2
+    container_name: wikijs
+    restart: unless-stopped
+    networks:
+      - proxy
+      - productivity
+    depends_on:
+      - wikijs-db
+    environment:
+      - DB_TYPE=postgres
+      - DB_HOST=wikijs-db
+      - DB_PORT=5432
+      - DB_USER=wikijs
+      - DB_PASS=${WIKIJS_DB_PASSWORD}
+      - DB_NAME=wikijs
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wikijs.entrypoints=http"
+      - "traefik.http.routers.wikijs.rule=Host(`wiki.${DOMAIN}`)"
+      - "traefik.http.middlewares.wikijs-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.wikijs.middlewares=wikijs-https-redirect"
+      - "traefik.http.routers.wikijs-secure.entrypoints=https"
+      - "traefik.http.routers.wikijs-secure.rule=Host(`wiki.${DOMAIN}`)"
+      - "traefik.http.routers.wikijs-secure.tls=true"
+      - "traefik.http.routers.wikijs-secure.service=wikijs"
+      - "traefik.http.services.wikijs.loadbalancer.server.port=3000"
+      - "traefik.docker.network=proxy"
+
+  wikijs-db:
+    image: postgres:15-alpine
+    container_name: wikijs-db
+    restart: unless-stopped
+    networks:
+      - productivity
+    environment:
+      - POSTGRES_DB=wikijs
+      - POSTGRES_USER=wikijs
+      - POSTGRES_PASSWORD=${WIKIJS_DB_PASSWORD}
+    volumes:
+      - wikijs-db:/var/lib/postgresql/data
+
+  # Standard Notes - Encrypted notes app
+  standardnotes:
+    image: standardnotes/server:latest
+    container_name: standardnotes
+    restart: unless-stopped
+    networks:
+      - proxy
+      - productivity
+    depends_on:
+      - standardnotes-db
+      - standardnotes-redis
+    environment:
+      - DB_TYPE=mysql
+      - DB_HOST=standardnotes-db
+      - DB_PORT=3306
+      - DB_DATABASE=standardnotes
+      - DB_USERNAME=standardnotes
+      - DB_PASSWORD=${STANDARDNOTES_DB_PASSWORD}
+      - REDIS_URL=redis://standardnotes-redis:6379
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.standardnotes.entrypoints=http"
+      - "traefik.http.routers.standardnotes.rule=Host(`notes.${DOMAIN}`)"
+      - "traefik.http.middlewares.standardnotes-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.standardnotes.middlewares=standardnotes-https-redirect"
+      - "traefik.http.routers.standardnotes-secure.entrypoints=https"
+      - "traefik.http.routers.standardnotes-secure.rule=Host(`notes.${DOMAIN}`)"
+      - "traefik.http.routers.standardnotes-secure.tls=true"
+      - "traefik.http.routers.standardnotes-secure.service=standardnotes"
+      - "traefik.http.services.standardnotes.loadbalancer.server.port=3000"
+      - "traefik.docker.network=proxy"
+
+  standardnotes-db:
+    image: mysql:8
+    container_name: standardnotes-db
+    restart: unless-stopped
+    networks:
+      - productivity
+    environment:
+      - MYSQL_ROOT_PASSWORD=${STANDARDNOTES_DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=standardnotes
+      - MYSQL_USER=standardnotes
+      - MYSQL_PASSWORD=${STANDARDNOTES_DB_PASSWORD}
+    volumes:
+      - standardnotes-db:/var/lib/mysql
+
+  standardnotes-redis:
+    image: redis:alpine
+    container_name: standardnotes-redis
+    restart: unless-stopped
+    networks:
+      - productivity
+
+networks:
+  proxy:
+    external: true
+  productivity:
+    driver: bridge
+
+volumes:
+  bookstack-config:
+  bookstack-db:
+  wikijs-db:
+  standardnotes-db:

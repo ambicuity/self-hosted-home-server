@@ -1,0 +1,56 @@
+version: '3.8'
+
+# Game Servers - Run your own game servers
+# Minecraft: Popular sandbox game | Valheim: Viking survival game
+
+services:
+  # Minecraft Server
+  minecraft:
+    image: itzg/minecraft-server:latest
+    container_name: minecraft
+    restart: unless-stopped
+    networks:
+      - proxy
+    environment:
+      - EULA=TRUE
+      - TYPE=${MC_TYPE}
+      - VERSION=${MC_VERSION}
+      - MEMORY=${MC_MEMORY}
+      - MAX_PLAYERS=${MC_MAX_PLAYERS}
+      - MOTD=${MC_MOTD}
+      - DIFFICULTY=${MC_DIFFICULTY}
+      - OPS=${MC_OPS}
+      - WHITELIST=${MC_WHITELIST}
+    ports:
+      - "25565:25565"
+    volumes:
+      - minecraft-data:/data
+    tty: true
+    stdin_open: true
+
+  # Valheim Server
+  valheim:
+    image: lloesche/valheim-server:latest
+    container_name: valheim
+    restart: unless-stopped
+    cap_add:
+      - sys_nice
+    environment:
+      - SERVER_NAME=${VALHEIM_SERVER_NAME}
+      - WORLD_NAME=${VALHEIM_WORLD_NAME}
+      - SERVER_PASS=${VALHEIM_PASSWORD}
+      - SERVER_PUBLIC=${VALHEIM_PUBLIC}
+    ports:
+      - "2456-2457:2456-2457/udp"
+    volumes:
+      - valheim-config:/config
+      - valheim-data:/opt/valheim
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  minecraft-data:
+  valheim-config:
+  valheim-data:

@@ -1,0 +1,102 @@
+version: '3.8'
+
+# Database Services Stack
+# PostgreSQL, MySQL, MongoDB, Redis - All major database engines
+
+services:
+  # PostgreSQL - Advanced relational database
+  postgresql:
+    image: postgres:15-alpine
+    container_name: postgresql
+    restart: unless-stopped
+    networks:
+      - databases
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # MySQL - Popular relational database
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    restart: unless-stopped
+    networks:
+      - databases
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+
+  # MongoDB - NoSQL document database
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    restart: unless-stopped
+    networks:
+      - databases
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongodb-data:/data/db
+    ports:
+      - "27017:27017"
+
+  # Redis - In-memory data store and cache
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: unless-stopped
+    networks:
+      - databases
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+
+  # Adminer - Web-based database management UI
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    restart: unless-stopped
+    networks:
+      - proxy
+      - databases
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgresql
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adminer.entrypoints=http"
+      - "traefik.http.routers.adminer.rule=Host(`adminer.${DOMAIN}`)"
+      - "traefik.http.middlewares.adminer-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.adminer.middlewares=adminer-https-redirect"
+      - "traefik.http.routers.adminer-secure.entrypoints=https"
+      - "traefik.http.routers.adminer-secure.rule=Host(`adminer.${DOMAIN}`)"
+      - "traefik.http.routers.adminer-secure.tls=true"
+      - "traefik.http.routers.adminer-secure.service=adminer"
+      - "traefik.http.services.adminer.loadbalancer.server.port=8080"
+      - "traefik.docker.network=proxy"
+
+networks:
+  proxy:
+    external: true
+  databases:
+    driver: bridge
+
+volumes:
+  postgresql-data:
+  mysql-data:
+  mongodb-data:
+  redis-data:
